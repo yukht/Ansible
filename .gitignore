@@ -1,0 +1,4 @@
+# IDE files
+**/.vscode-server
+# Keys
+/vm_all-ssh_key_ansible.pem
