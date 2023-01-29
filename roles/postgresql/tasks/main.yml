@@ -1,0 +1,83 @@
+---
+# tasks for postgresql role
+  - name: Copy postgresql apt list to support all versions
+    copy:
+      src: ./files/pgdg.list
+      dest: /etc/apt/sources.list.d/pgdg.list
+
+  - name: Add postgresql GPG apt key
+    apt_key:
+      url: https://www.postgresql.org/media/keys/ACCC4CF8.asc
+      state: present
+
+  - name: install postgresql
+    apt: 
+      name: "postgresql-{{ postgres_version }}"
+      update_cache: yes
+
+  # - name: Drop postgresql
+  #   apt: 
+  #     name: postgresql-*
+  #     update_cache: yes
+  #     state: absent
+  #     clean: yes
+  #     purge: yes
+
+  - name: Get stats of new pg datadir
+    ansible.builtin.stat:
+      path: "{{ postgres_data }}"
+    register: postgres_datadir
+
+  - name: Migration
+    block:
+
+      - name: Stop postgresql
+        ansible.builtin.service:
+          name: postgresql
+          state: stopped
+
+      - name: Create new data_directory
+        file:
+          path: "{{ postgres_data }}"
+          state: directory
+          owner: postgres
+          group: postgres
+          recurse: yes
+
+      - name: Set permissions to new data_directory
+        file:
+          path: "{{ postgres_data }}"
+          state: directory
+          mode: "0700"
+          recurse: no
+
+      - name: Clone data_directory files
+        shell: "rsync -aAX /var/lib/postgresql/{{ postgres_version }}/main/* {{ postgres_data }}/" 
+
+      - name: Disable old data_directory in file postgresql.conf
+        replace:
+          path: "/etc/postgresql/{{ postgres_version }}/main/postgresql.conf"
+          regexp: '^data_directory'
+          replace: "#data_directory"
+
+      - name: Set new data_directory in file postgresql.conf
+        lineinfile:
+          path: "/etc/postgresql/{{ postgres_version }}/main/postgresql.conf"
+          insertafter: '^#data_directory'
+          line: "data_directory = '{{ postgres_data }}'"
+
+      - name: Start postgresql
+        ansible.builtin.service:
+          name: postgresql
+          state: started
+
+      - name: Check if postgresql is running
+        shell: pgrep postgres
+        ignore_errors: yes
+        changed_when: false
+        register: service_postgresql_status
+
+      - name: Rename old datadir
+        shell: "mv /var/lib/postgresql/{{ postgres_version }}/main /var/lib/postgresql/{{ postgres_version }}/main.old"
+        when: service_postgresql_status.rc == 0
+    when: not postgres_datadir.stat.exists

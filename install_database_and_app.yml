@@ -1,0 +1,15 @@
+---
+- hosts: database
+  gather_facts: no
+  become: true
+  vars:
+    postgres_version: "9.6"
+    postgres_data: "/opt/postgres/{{ postgres_version }}/main"
+  roles:
+    - postgresql
+
+- hosts: app
+  gather_facts: yes
+  become: true
+  roles:
+    - docker
